@@ -1,53 +1,68 @@
+import { db } from '../db';
+import { stocksTable, sentimentDataTable } from '../db/schema';
 import { type StockWithSentiment } from '../schema';
+import { eq, desc, and, max, sql } from 'drizzle-orm';
 
 export const getStocksWithSentiment = async (): Promise<StockWithSentiment[]> => {
-  // This is a placeholder declaration! Real code should be implemented here.
-  // The goal of this handler is fetching all stocks with their current sentiment information.
-  // This would typically:
-  // 1. Query all stocks from the database
-  // 2. Join with the most recent sentiment data for each stock
-  // 3. Calculate current sentiment score and type
-  // 4. Return stocks with aggregated sentiment information
-  
-  return Promise.resolve([
-    {
-      id: 1,
-      symbol: 'AAPL',
-      name: 'Apple Inc.',
-      current_price: 175.50,
-      price_change_24h: 2.35,
-      market_cap: 2750000000000,
-      volume_24h: 45000000,
-      last_updated: new Date(),
-      created_at: new Date(),
-      current_sentiment_score: 0.65,
-      current_sentiment_type: 'positive'
-    },
-    {
-      id: 2,
-      symbol: 'GOOGL',
-      name: 'Alphabet Inc.',
-      current_price: 2650.00,
-      price_change_24h: -15.75,
-      market_cap: 1650000000000,
-      volume_24h: 25000000,
-      last_updated: new Date(),
-      created_at: new Date(),
-      current_sentiment_score: 0.15,
-      current_sentiment_type: 'neutral'
-    },
-    {
-      id: 3,
-      symbol: 'TSLA',
-      name: 'Tesla Inc.',
-      current_price: 185.25,
-      price_change_24h: -8.50,
-      market_cap: 590000000000,
-      volume_24h: 75000000,
-      last_updated: new Date(),
-      created_at: new Date(),
-      current_sentiment_score: -0.35,
-      current_sentiment_type: 'negative'
-    }
-  ] as StockWithSentiment[]);
+  try {
+    // First, get the most recent sentiment data for each stock using a subquery
+    const latestSentimentSubquery = db
+      .select({
+        stock_id: sentimentDataTable.stock_id,
+        max_recorded_at: max(sentimentDataTable.recorded_at).as('max_recorded_at')
+      })
+      .from(sentimentDataTable)
+      .groupBy(sentimentDataTable.stock_id)
+      .as('latest_sentiment');
+
+    // Main query to get stocks with their latest sentiment data
+    const results = await db
+      .select({
+        // Stock fields
+        id: stocksTable.id,
+        symbol: stocksTable.symbol,
+        name: stocksTable.name,
+        current_price: stocksTable.current_price,
+        price_change_24h: stocksTable.price_change_24h,
+        market_cap: stocksTable.market_cap,
+        volume_24h: stocksTable.volume_24h,
+        last_updated: stocksTable.last_updated,
+        created_at: stocksTable.created_at,
+        // Sentiment fields
+        sentiment_score: sentimentDataTable.sentiment_score,
+        sentiment_type: sentimentDataTable.sentiment_type
+      })
+      .from(stocksTable)
+      .leftJoin(
+        latestSentimentSubquery,
+        eq(stocksTable.id, latestSentimentSubquery.stock_id)
+      )
+      .leftJoin(
+        sentimentDataTable,
+        and(
+          eq(sentimentDataTable.stock_id, latestSentimentSubquery.stock_id),
+          eq(sentimentDataTable.recorded_at, latestSentimentSubquery.max_recorded_at)
+        )
+      )
+      .orderBy(stocksTable.symbol)
+      .execute();
+
+    // Transform results and handle numeric conversions
+    return results.map(result => ({
+      id: result.id,
+      symbol: result.symbol,
+      name: result.name,
+      current_price: parseFloat(result.current_price),
+      price_change_24h: parseFloat(result.price_change_24h),
+      market_cap: result.market_cap ? parseFloat(result.market_cap) : null,
+      volume_24h: result.volume_24h ? parseFloat(result.volume_24h) : null,
+      last_updated: result.last_updated,
+      created_at: result.created_at,
+      current_sentiment_score: result.sentiment_score || null,
+      current_sentiment_type: result.sentiment_type || null
+    }));
+  } catch (error) {
+    console.error('Failed to get stocks with sentiment:', error);
+    throw error;
+  }
 };

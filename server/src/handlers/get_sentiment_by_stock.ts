@@ -1,36 +1,35 @@
+import { db } from '../db';
+import { sentimentDataTable } from '../db/schema';
 import { type SentimentQueryInput, type SentimentData } from '../schema';
+import { eq, gte, desc, and } from 'drizzle-orm';
 
 export const getSentimentByStock = async (input: SentimentQueryInput): Promise<SentimentData[]> => {
-  // This is a placeholder declaration! Real code should be implemented here.
-  // The goal of this handler is fetching sentiment data for a specific stock.
-  // This would typically:
-  // 1. Query sentiment data filtered by stock_id
-  // 2. Apply date range filter based on 'days' parameter
-  // 3. Limit results based on 'limit' parameter
-  // 4. Order by recorded_at descending (most recent first)
-  
-  return Promise.resolve([
-    {
-      id: 1,
-      stock_id: input.stock_id,
-      sentiment_score: 0.65,
-      sentiment_type: 'positive',
-      confidence: 0.85,
-      source: 'news_api',
-      news_headline: 'Apple reports strong quarterly earnings',
-      recorded_at: new Date(Date.now() - 24 * 60 * 60 * 1000), // 1 day ago
-      created_at: new Date(Date.now() - 24 * 60 * 60 * 1000)
-    },
-    {
-      id: 2,
-      stock_id: input.stock_id,
-      sentiment_score: 0.35,
-      sentiment_type: 'positive',
-      confidence: 0.72,
-      source: 'social_media',
-      news_headline: 'Positive social media buzz around new iPhone',
-      recorded_at: new Date(Date.now() - 48 * 60 * 60 * 1000), // 2 days ago
-      created_at: new Date(Date.now() - 48 * 60 * 60 * 1000)
-    }
-  ] as SentimentData[]);
+  try {
+    // Calculate the date threshold based on the 'days' parameter
+    const daysAgo = new Date();
+    daysAgo.setDate(daysAgo.getDate() - input.days);
+
+    // Query sentiment data for the specific stock
+    const results = await db.select()
+      .from(sentimentDataTable)
+      .where(
+        and(
+          eq(sentimentDataTable.stock_id, input.stock_id),
+          gte(sentimentDataTable.recorded_at, daysAgo)
+        )
+      )
+      .orderBy(desc(sentimentDataTable.recorded_at))
+      .limit(input.limit)
+      .execute();
+
+    // Convert numeric fields back to numbers for consistency
+    return results.map((result: any) => ({
+      ...result,
+      sentiment_score: Number(result.sentiment_score),
+      confidence: Number(result.confidence)
+    }));
+  } catch (error) {
+    console.error('Sentiment data retrieval failed:', error);
+    throw error;
+  }
 };

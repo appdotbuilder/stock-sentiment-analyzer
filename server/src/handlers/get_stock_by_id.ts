@@ -1,25 +1,33 @@
+import { db } from '../db';
+import { stocksTable } from '../db/schema';
+import { eq } from 'drizzle-orm';
 import { type Stock } from '../schema';
 
 export const getStockById = async (id: number): Promise<Stock | null> => {
-  // This is a placeholder declaration! Real code should be implemented here.
-  // The goal of this handler is fetching a specific stock by its ID from the database.
-  // This would typically:
-  // 1. Query the stock by ID
-  // 2. Return the stock if found, null otherwise
-  
-  if (id === 1) {
-    return Promise.resolve({
-      id: 1,
-      symbol: 'AAPL',
-      name: 'Apple Inc.',
-      current_price: 175.50,
-      price_change_24h: 2.35,
-      market_cap: 2750000000000,
-      volume_24h: 45000000,
-      last_updated: new Date(),
-      created_at: new Date()
-    } as Stock);
+  try {
+    // Query stock by ID
+    const results = await db.select()
+      .from(stocksTable)
+      .where(eq(stocksTable.id, id))
+      .execute();
+
+    // Return null if no stock found
+    if (results.length === 0) {
+      return null;
+    }
+
+    const stock = results[0];
+    
+    // Convert numeric fields from strings to numbers
+    return {
+      ...stock,
+      current_price: parseFloat(stock.current_price),
+      price_change_24h: parseFloat(stock.price_change_24h),
+      market_cap: stock.market_cap ? parseFloat(stock.market_cap) : null,
+      volume_24h: stock.volume_24h ? parseFloat(stock.volume_24h) : null
+    };
+  } catch (error) {
+    console.error('Failed to fetch stock by ID:', error);
+    throw error;
   }
-  
-  return Promise.resolve(null);
 };
